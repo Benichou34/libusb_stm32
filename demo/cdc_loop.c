@@ -31,7 +31,7 @@
 
 
 //#define SIGNAL_MODEM  /* uncomment to signal modem capabilities */
-//#define CDC_USE_IRQ   /* uncomment to build interrupt-based demo */
+#define CDC_USE_IRQ   /* uncomment to build interrupt-based demo */
 
 #if defined(SIGNAL_MODEM)
 #define CDC_PROTOCOL USB_CDC_PROTO_V25TER
@@ -180,8 +180,8 @@ static const struct usb_string_descriptor *const dtable[] = {
 };
 
 usbd_device udev;
-uint32_t	ubuf[0x20];
-
+uint32_t    ubuf[0x20];
+uint32_t    ctr, dctr = 0;
 
 static struct usb_cdc_line_coding cdc_line = {
     .dwDTERate          = 38400,
@@ -227,6 +227,8 @@ static usbd_respond cdc_control(usbd_device *dev, usbd_ctlreq *req, usbd_rqc_cal
         && req->wIndex == 0 ) {
         switch (req->bRequest) {
         case USB_CDC_SET_CONTROL_LINE_STATE:
+            ctr = 0;
+            dctr = 0;
             return usbd_ack;
         case USB_CDC_SET_LINE_CODING:
             memcpy(&cdc_line, req->data, sizeof(cdc_line));
@@ -278,6 +280,8 @@ static void cdc_init_usbd(void) {
     usbd_reg_descr(&udev, cdc_getdesc);
 }
 
+void *_sbrk(int incr) { return (void *)-1; }
+
 #if defined(CDC_USE_IRQ)
 #if defined(STM32L052xx) || defined(STM32F070xB) || \
 	defined(STM32F042x6)
@@ -320,16 +324,24 @@ void main(void) {
     usbd_enable(&udev, true);
     usbd_connect(&udev, true);
     while(1) {
-        __WFI();
+        if (udev.status.device_state == usbd_state_configured) {
+            if (ctr == 200000) {
+                uint8_t buf[0x100];
+                ctr = 0;
+                dctr++;
+                sprintf(buf, "%d Hello!\n\r", dctr);
+                usbd_ep_write(&udev, CDC_TXD_EP, buf, strlen(buf));
+            } else {
+                ctr++;
+            }
+        }
     }
 }
 #else
 
-void *_sbrk(int incr) { return (void *)-1; }
 
 int main(void) {
     uint8_t buf[0x100];
-    uint32_t ctr, dctr = 0;
     cdc_init_usbd();
     usbd_enable(&udev, true);
     usbd_connect(&udev, true);
